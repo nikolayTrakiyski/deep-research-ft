@@ -5,7 +5,7 @@ import json
 # =======================
 # Configuration Constants
 # =======================
-OPENAI_API_KEY = "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"  # Replace with your OpenAI API key
+OPENAI_API_KEY = "sk-..."  # Replace with your OpenAI API key
 SERPAPI_API_KEY = "2188e6409389f8745676e76ad716b289a0e0384bec214cbe6d8d0809aeba014c" # Replace with your SERPAPI API key
 JINA_API_KEY = "jina_3f58b524e5f5438790154f9728b0fee1Ih5FH-KA3V6SL1VFF1mgoEr2bG57"   # Replace with your JINA API key
 
@@ -15,8 +15,7 @@ SERPAPI_URL = "https://serpapi.com/search"
 JINA_BASE_URL = "https://r.jina.ai/"
 
 # Default LLM model
-# (You may adjust to "gpt-4" or any other model you have access to.)
-DEFAULT_MODEL = "gpt-4o-mini"
+DEFAULT_MODEL = "gpt-3.5-turbo"
 
 # ============================
 # Asynchronous Helper Functions
@@ -70,7 +69,6 @@ async def generate_search_queries_async(session, user_query):
     response = await call_openai_async(session, messages)
     if response:
         try:
-            # Expect exactly a Python list (e.g., "['query1', 'query2']")
             search_queries = eval(response)
             if isinstance(search_queries, list):
                 return search_queries
@@ -154,7 +152,7 @@ async def is_page_useful_async(session, user_query, page_text):
         if answer in ["Yes", "No"]:
             return answer
         else:
-            # Fallback: try to extract Yes/No from the response.
+            # Fallback: try to extract Yes/No
             if "Yes" in answer:
                 return "Yes"
             elif "No" in answer:
@@ -185,7 +183,8 @@ async def extract_relevant_context_async(session, user_query, search_query, page
 async def get_new_search_queries_async(session, user_query, previous_search_queries, all_contexts):
     """
     Based on the original query, the previously used search queries, and all the extracted contexts,
-    ask the LLM whether additional search queries are needed. If yes, return a Python list of up to four queries;
+    ask the LLM whether additional search queries are needed. 
+    If yes, return a Python list of up to four queries; 
     if the LLM thinks research is complete, it should return "".
     """
     context_combined = "\n".join(all_contexts)
@@ -193,12 +192,19 @@ async def get_new_search_queries_async(session, user_query, previous_search_quer
         "You are an analytical research assistant. Based on the original query, the search queries performed so far, "
         "and the extracted contexts from webpages, determine if further research is needed. "
         "If further research is needed, provide up to four new search queries as a Python list (for example, "
-        "['new query1', 'new query2']). If you believe no further research is needed, respond with exactly ."
-        "\nOutput only a Python list or the token  without any additional text."
+        "['new query1', 'new query2']). If you believe no further research is needed, respond with exactly .\n"
+        "Output only a Python list or the token  without any additional text."
     )
     messages = [
         {"role": "system", "content": "You are a systematic research planner."},
-        {"role": "user", "content": f"User Query: {user_query}\nPrevious Search Queries: {previous_search_queries}\n\nExtracted Relevant Contexts:\n{context_combined}\n\n{prompt}"}
+        {
+            "role": "user",
+            "content": (
+                f"User Query: {user_query}\n"
+                f"Previous Search Queries: {previous_search_queries}\n\n"
+                f"Extracted Relevant Contexts:\n{context_combined}\n\n{prompt}"
+            )
+        }
     ]
     response = await call_openai_async(session, messages)
     if response:
@@ -230,7 +236,13 @@ async def generate_final_report_async(session, user_query, all_contexts):
     )
     messages = [
         {"role": "system", "content": "You are a skilled report writer."},
-        {"role": "user", "content": f"User Query: {user_query}\n\nGathered Relevant Contexts:\n{context_combined}\n\n{prompt}"}
+        {
+            "role": "user",
+            "content": (
+                f"User Query: {user_query}\n\n"
+                f"Gathered Relevant Contexts:\n{context_combined}\n\n{prompt}"
+            )
+        }
     ]
     report = await call_openai_async(session, messages)
     return report
@@ -238,7 +250,8 @@ async def generate_final_report_async(session, user_query, all_contexts):
 
 async def process_link(session, link, user_query, search_query):
     """
-    Process a single link: fetch its content, judge its usefulness, and if useful, extract the relevant context.
+    Process a single link: fetch its content, judge its usefulness, 
+    and if useful, extract the relevant context.
     """
     print(f"Fetching content from: {link}")
     page_text = await fetch_webpage_text_async(session, link)
@@ -253,28 +266,29 @@ async def process_link(session, link, user_query, search_query):
             return context
     return None
 
+
 # =========================
 # Main Asynchronous Routine
 # =========================
 
-async def async_main():
-    user_query = input("Enter your research query/topic: ").strip()
-    iter_limit_input = input("Enter maximum number of iterations (default 10): ").strip()
-    iteration_limit = int(iter_limit_input) if iter_limit_input.isdigit() else 10
-
+async def async_research_pipeline(user_query, iteration_limit):
+    """
+    The full research pipeline, accepting the user_query and iteration_limit 
+    (instead of input prompts).
+    Returns the final report as a string.
+    """
     aggregated_contexts = []    # All useful contexts from every iteration
     all_search_queries = []     # Every search query used across iterations
     iteration = 0
 
     async with aiohttp.ClientSession() as session:
-        # ----- INITIAL SEARCH QUERIES -----
+        # 1) INITIAL SEARCH QUERIES
         new_search_queries = await generate_search_queries_async(session, user_query)
         if not new_search_queries:
-            print("No search queries were generated by the LLM. Exiting.")
-            return
+            return "No search queries were generated by the LLM. Exiting."
         all_search_queries.extend(new_search_queries)
 
-        # ----- ITERATIVE RESEARCH LOOP -----
+        # 2) ITERATIVE RESEARCH LOOP
         while iteration < iteration_limit:
             print(f"\n=== Iteration {iteration + 1} ===")
             iteration_contexts = []
@@ -283,8 +297,7 @@ async def async_main():
             search_tasks = [perform_search_async(session, query) for query in new_search_queries]
             search_results = await asyncio.gather(*search_tasks)
 
-            # Aggregate all unique links from all search queries of this iteration.
-            # Map each unique link to the search query that produced it.
+            # Aggregate all unique links from these search queries.
             unique_links = {}
             for idx, links in enumerate(search_results):
                 query = new_search_queries[idx]
@@ -294,14 +307,13 @@ async def async_main():
 
             print(f"Aggregated {len(unique_links)} unique links from this iteration.")
 
-            # Process each link concurrently: fetch, judge, and extract context.
+            # Process each link concurrently: fetch, judge, extract context.
             link_tasks = [
                 process_link(session, link, user_query, unique_links[link])
                 for link in unique_links
             ]
             link_results = await asyncio.gather(*link_tasks)
 
-            # Collect non-None contexts.
             for res in link_results:
                 if res:
                     iteration_contexts.append(res)
@@ -311,8 +323,10 @@ async def async_main():
             else:
                 print("No useful contexts were found in this iteration.")
 
-            # ----- ASK THE LLM IF MORE SEARCHES ARE NEEDED -----
-            new_search_queries = await get_new_search_queries_async(session, user_query, all_search_queries, aggregated_contexts)
+            # Ask the LLM if more searches are needed.
+            new_search_queries = await get_new_search_queries_async(
+                session, user_query, all_search_queries, aggregated_contexts
+            )
             if new_search_queries == "":
                 print("LLM indicated that no further research is needed.")
                 break
@@ -325,16 +339,14 @@ async def async_main():
 
             iteration += 1
 
-        # ----- FINAL REPORT -----
+        # 3) FINAL REPORT
         print("\nGenerating final report...")
         final_report = await generate_final_report_async(session, user_query, aggregated_contexts)
-        print("\n==== FINAL REPORT ====\n")
-        print(final_report)
+        return final_report or "No final report was generated."
 
 
-def main():
-    asyncio.run(async_main())
-
-
-if __name__ == "__main__":
-    main()
+def run_research(user_query, iteration_limit=10):
+    """
+    A synchronous wrapper that runs the async pipeline and returns the final report.
+    """
+    return asyncio.run(async_research_pipeline(user_query, iteration_limit))
